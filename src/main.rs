@@ -1,52 +1,37 @@
-use hello_cargo::ThreadPool;
-// use hello_cargo::Service;
-use std::fs;
-use std::io::prelude::*;
-use std::net::TcpListener;
-use std::net::TcpStream;
-use std::thread;
-use std::time::Duration;
+extern crate actix;
+extern crate actix_web;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde_json;
 
-fn main() {
-    let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
-    let pool = ThreadPool::new(4);
+use actix::prelude::*;
+use actix_web::{http, server, App, Error, HttpRequest, HttpResponse};
+use std::collections::HashMap;
 
-    for stream in listener.incoming().take(2) {
-        let stream = stream.unwrap();
-
-        pool.execute(|| {
-            handle_connection(stream);
-        });
-    }
-
-    println!("Shutting down.");
+#[derive(Serialize, Deserialize)]
+struct Group {
+    name: String,
+    members: Vec<String>,
 }
 
-fn handle_connection(mut stream: TcpStream) {
-    let mut buffer = [0; 1024];
-    stream.read(&mut buffer).unwrap();
+struct AppState {
+    groups: HashMap<String, Group>,
+}
 
-    let get = b"GET / HTTP/1.1\r\n";
-    let sleep = b"GET /sleep HTTP/1.1\r\n";
+fn create_group((group, state): (Json<Group>, State<AppState>)) -> HttpResponse {
+    let group_name = group.name.clone();
+    state.groups.insert(group_name, group.into_inner());
+    HttpResponse::Ok().into()
+}
 
-    let (status_line, filename) = if buffer.starts_with(get) {
-        ("HTTP/1.1 200 OK", "hello.html")
-    } else if buffer.starts_with(sleep) {
-        thread::sleep(Duration::from_secs(5));
-        ("HTTP/1.1 200 OK", "hello.html")
-    } else {
-        ("HTTP/1.1 404 NOT FOUND", "404.html")
-    };
+fn main() -> std::io::Result<()> {
+    let state = AppState { groups: HashMap::new() };
 
-    let contents = fs::read_to_string(filename).unwrap();
-
-    let response = format!(
-        "{}\r\nContent-Length: {}\r\n\r\n{}",
-        status_line,
-        contents.len(),
-        contents
-    );
-
-    stream.write_all(response.as_bytes()).unwrap();
-    stream.flush().unwrap();
+    server::new(move || {
+        App::with_state(state.clone())
+            .resource("/groups", |r| r.method(http::Method::POST).with(create_group))
+    })
+    .bind("127.0.0.1:8080")?
+    .run()
 }
