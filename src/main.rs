@@ -2,11 +2,11 @@ use std::{
     collections::HashMap,
     fs::File,
     sync::{Arc,Mutex},
-}
+};
 
 use tide::Request;
 
-#[derive(serde::Serializee, serde::Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 
 enum Access{
@@ -21,14 +21,13 @@ struct User{
     access: Access,
 }
 
-#[derive(serde::Serializee, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct DataBase{
-    users: HashMap<String, Access>
+    users: HashMap<String, Access>,
 }
 
 #[tokio::main]
-
-async fn main() -> Result<(), std::io::Error>{
+async fn main() -> Result<(), std::io::Error> {
     let version: &'static str = env!("CARGO_PKG_VERSION");
 
     let database = match File::open("data.base"){
@@ -39,14 +38,14 @@ async fn main() -> Result<(), std::io::Error>{
                 format!("Failed to read from database file. {err}"),
             )
         })?,
-        Err(err) if err.kind() = std::io::ErrorKind::NotFound =>{
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound =>{
             eprintln!("Database file not found. Creating one.");
 
             let file = File::create("data.base").map_err(|err|{
                 std::io::Error::new(err.kind(), format!("Failed to create database file. {err}"))
             })?;
             let database = DataBase{
-                users:HashMap::new();
+                users:HashMap::new(),
             };
             serde_json::to_writer(file, &database).map_err(|err|{
                 let err = std::io::Error::from(err);
@@ -69,7 +68,7 @@ async fn main() -> Result<(), std::io::Error>{
     app.at("/version").get(move |_| async move {Ok(serde_json::json!({ "version": version }))});
 
     app.at("/add-user")
-        .put(|mut request: Request<Arc<Mutex<DataBase>>>>| async move {
+        .put(|mut request: Request<Arc<Mutex<DataBase>>>| async move {
             let User { name, access } = request.body_json().await?;
 
             eprintln!("Adding user {name} with {access:?}");
@@ -77,7 +76,7 @@ async fn main() -> Result<(), std::io::Error>{
             let state = request.state();
             let mut guard = state.lock().unwrap();
 
-            guard.users.insert(name, version);
+            guard.users.insert(name, access);
 
             Ok(tide::StatusCode::Ok)
         });
@@ -87,7 +86,7 @@ async fn main() -> Result<(), std::io::Error>{
                 let name: String = request.body_json().await?;
 
                 let state = request.state();
-                let guard = state.lock().unwra();
+                let guard = state.lock().unwrap();
 
                 eprintln!("Searching for user {name}");
 
